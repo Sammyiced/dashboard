@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Building Energy Monitor</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+</head>
+
+<body class="bg-gray-100 font-sans">
+
+    <nav class="bg-blue-600 p-4 text-white shadow-lg">
+        <div class="container mx-auto flex justify-between items-center">
+            <h1 class="text-xl font-bold">My Energy Tracker</h1>
+            <span class="bg-blue-800 px-4 py-1 rounded-full text-sm font-semibold tracking-wide border border-blue-400">
+                Sammy's Dashboard
+            </span>
+        </div>
+    </nav>
+
+    <main class="container mx-auto py-8 px-4">
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+            <div class="bg-white p-6 rounded-lg shadow border-l-4 border-yellow-400">
+                <p class="text-gray-500 text-sm">Total Energy (Session)</p>
+                <h2 id="totalUsage" class="text-3xl font-bold text-slate-800">0 kW</h2>
+            </div>
+            <div class="bg-white p-6 rounded-lg shadow border-l-4 border-blue-400">
+                <p class="text-gray-500 text-sm">Real-Time Usage</p>
+                <h2 id="realTimeVal" class="text-3xl font-bold text-slate-800">0 kWh</h2>
+            </div>
+            <div class="bg-white p-6 rounded-lg shadow border-l-4 border-green-400">
+                <p class="text-gray-500 text-sm">Source</p>
+                <h2 class="text-3xl font-bold text-green-600 uppercase text-lg">Cloud Firestore</h2>
+            </div>
+        </div>
+
+        <div class="bg-white p-6 rounded-lg shadow">
+            <h3 class="text-lg font-semibold mb-4 text-gray-700">Live Energy Consumption</h3>
+            <div class="relative h-[450px]">
+                <canvas id="energyChart"></canvas>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        // --- 1. FIREBASE CONFIGURATION ---
+        // PASTE YOUR ACTUAL CONFIG FROM FIREBASE CONSOLE HERE
+        const firebaseConfig = {
+            apiKey: "AIzaSyDoFldRkgFCHSwgF_xHbF_-6rxL8jUGgQk",
+            authDomain: "dashboard-56f05.firebaseapp.com",
+            projectId: "dashboard-56f05",
+            storageBucket: "dashboard-56f05.firebasestorage.app",
+            messagingSenderId: "97401941730",
+            appId: "1:97401941730:web:c12d34a03218791adc38bb",
+            measurementId: "G-QTQMVJ7YQQ"
+        };
+
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+
+        const maxPoints = 10;
+
+        // --- 2. CHART SETUP ---
+        const ctx = document.getElementById('energyChart').getContext('2d');
+        const myChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'Usage (kW)',
+                    data: [],
+                    borderColor: '#2563eb',
+                    backgroundColor: 'rgba(37, 99, 235, 0.1)',
+                    fill: true,
+                    tension: 0.4,
+                    borderWidth: 3,
+                    pointRadius: 5
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        suggestedMax: 100,
+                        ticks: { color: '#64748b' }
+                    },
+                    x: {
+                        ticks: { color: '#64748b' }
+                    }
+                }
+            }
+        });
+
+        // --- 3. THE "SEEDER" (Pushing Data to DB) ---
+        function pushDataToCloud() {
+            const now = new Date();
+            const timeLabel = now.getHours() + ":" + (now.getMinutes() < 10 ? '0' : '') + now.getMinutes();
+            const newValue = Math.floor(Math.random() * 70) + 20;
+
+            db.collection("energy_readings").add({
+                timeLabel: timeLabel,
+                value: newValue,
+                timestamp: firebase.firestore.FieldValue.serverTimestamp()
+            }).then(() => {
+                console.log("Uploaded: " + newValue + "kW");
+            });
+        }
+
+        // --- 4. THE "LISTENER" (Fetching Data from DB) ---
+        function startCloudListener() {
+            db.collection("energy_readings")
+                .orderBy("timestamp", "desc")
+                .limit(maxPoints)
+                .onSnapshot((snapshot) => {
+                    const labels = [];
+                    const values = [];
+
+                    // Firestore gives newest first; reverse for the chart
+                    const docs = snapshot.docs.reverse();
+
+                    docs.forEach(doc => {
+                        const data = doc.data();
+                        labels.push(data.timeLabel);
+                        values.push(data.value);
+                    });
+
+                    // Update Chart
+                    myChart.data.labels = labels;
+                    myChart.data.datasets[0].data = values;
+                    myChart.update();
+
+                    // Update Top Cards
+                    if (values.length > 0) {
+                        const latest = values[values.length - 1];
+                        document.getElementById('realTimeVal').innerText = latest + " kWh";
+
+                        const total = values.reduce((a, b) => a + b, 0);
+                        document.getElementById('totalUsage').innerText = total + " kW";
+                    }
+                });
+        }
+
+        // --- 5. EXECUTION ---
+        startCloudListener();
+        pushDataToCloud();
+        setInterval(pushDataToCloud, 5000);
+
+    </script>
+</body>
+
+</html>
